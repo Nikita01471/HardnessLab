@@ -407,7 +407,7 @@ class MainActivity : Activity() {
             section.addView(line,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(3),0,dp(3))})
         }
         val erase=Button(this).apply {
-            text="Очистить историю";isAllCaps=false;textSize=12f;setTextColor(muted)
+            text="Очистить данные";isAllCaps=false;textSize=12f;setTextColor(muted)
             background=shape(Color.rgb(35,48,65))
             setOnClickListener {
                 android.app.AlertDialog.Builder(this@MainActivity)
@@ -441,9 +441,10 @@ class MainActivity : Activity() {
         pairedFields(p,a,b,"Диагональ")
         val out=text("",19f,hvBlue)
         val controls=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL };p.addView(controls)
-        val history=measurementHistory(p,vickersHistory,"HV")
+        val history=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         actionButtons(controls,listOf(a,b),out) { appendMeasurement(history,vickersHistory,a,b,out,"HV") }
-        p.removeView(controls);p.addView(controls,p.indexOfChild(history))
+        p.addView(history)
+        renderMeasurementHistory(history,vickersHistory,"HV")
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val kgf=vLoads[load.selectedItemPosition.coerceIn(0,vLoads.lastIndex)]
@@ -467,9 +468,10 @@ class MainActivity : Activity() {
         pairedFields(p,a,b,"Отпечаток")
         val out=text("",19f,hbGreen)
         val controls=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL };p.addView(controls)
-        val history=measurementHistory(p,brinellHistory,"HB")
+        val history=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         actionButtons(controls,listOf(a,b),out) { appendMeasurement(history,brinellHistory,a,b,out,"HB") }
-        p.removeView(controls);p.addView(controls,p.indexOfChild(history))
+        p.addView(history)
+        renderMeasurementHistory(history,brinellHistory,"HB")
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val diameter=listOf(1.0,2.5,5.0,10.0)[ball.selectedItemPosition]
