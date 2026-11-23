@@ -12,6 +12,13 @@ android {
  defaultConfig { applicationId = "com.hardnesslab.app"; minSdk = 24; targetSdk = 35; versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt() + 1000; versionName = "3.2" } }
 
 android {
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
