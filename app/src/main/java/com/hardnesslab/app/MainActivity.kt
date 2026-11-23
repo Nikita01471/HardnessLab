@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.View
+import android.view.WindowInsets
+import android.os.Build
 import android.view.inputmethod.InputMethodManager
 import android.graphics.drawable.GradientDrawable
 import android.widget.*
@@ -63,15 +65,23 @@ class MainActivity : Activity() {
     private val accent = Color.rgb(75, 196, 235)
     private lateinit var root: LinearLayout
     private lateinit var resultDock: TextView
+    private var keyboardVisible = false
+    private var activeInput: EditText? = null
+    private var latestResult = ""
+    private fun refreshDock() {
+        if (!::resultDock.isInitialized) return
+        resultDock.text = latestResult
+        resultDock.visibility = if (keyboardVisible && latestResult.isNotBlank()) View.VISIBLE else View.GONE
+    }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
-    private fun shape(color: Int, stroke: Int? = null): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius=dp(12).toFloat(); if(stroke!=null) setStroke(dp(1),stroke) }
-    private fun showResult(message: String) { if(::resultDock.isInitialized) { resultDock.text=message; resultDock.visibility=if(message.isBlank()) View.GONE else View.VISIBLE } }
+    private fun shape(color: Int, stroke: Int? = null): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius=dp(16).toFloat(); if(stroke!=null) setStroke(dp(1),stroke) }
+    private fun showResult(message: String) { latestResult = message; refreshDock() }
     private fun actionButtons(p: LinearLayout, fields: List<EditText>) {
         val bar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         val submit=Button(this).apply { text="Ввод";isAllCaps=false;setTextColor(Color.BLACK);background=shape(accent);setOnClickListener { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken,0);currentFocus?.clearFocus() } }
         val clear=Button(this).apply { text="Очистить";isAllCaps=false;setTextColor(Color.WHITE);background=shape(Color.rgb(68,80,95));setOnClickListener { fields.forEach { it.text.clear() };showResult("") } }
-        val l=LinearLayout.LayoutParams(0,dp(52),1f);l.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(submit,l)
-        val r=LinearLayout.LayoutParams(0,dp(52),1f);r.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(clear,r);p.addView(bar)
+        val l=LinearLayout.LayoutParams(0,dp(48),1f);l.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(submit,l)
+        val r=LinearLayout.LayoutParams(0,dp(48),1f);r.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(clear,r);p.addView(bar)
     }
     private val prefs by lazy { getSharedPreferences("hardnesslab_modes_v21", Context.MODE_PRIVATE) }
     private fun remember(key: String, widget: Spinner) {
@@ -84,13 +94,13 @@ class MainActivity : Activity() {
         }
     }
     private fun labeled(p: LinearLayout, label: String, input: EditText) {
-        p.addView(text(label, 14f, Color.LTGRAY)); p.addView(input)
+        p.addView(text(label, 13f, Color.LTGRAY)); p.addView(input)
     }
     private fun clearButton(p: LinearLayout, fields: List<EditText>) = actionButtons(p,fields)
     private var currentTab = 0
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
-        text=s; textSize=size; setTextColor(color); setPadding(0,12,0,12)
+        text=s; textSize=size; setTextColor(color); setPadding(0,dp(7),0,dp(7))
     }
     private fun field(hintText: String, initial: String): EditText = EditText(this).apply {
         hint=hintText; setText(initial); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
@@ -98,32 +108,52 @@ class MainActivity : Activity() {
         imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE
         setOnEditorActionListener { _,_,_ -> (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken,0);clearFocus();true }
         setSingleLine(true)
+        setPadding(dp(10),dp(8),dp(10),dp(8))
+        setOnFocusChangeListener { _, focused -> if(focused) activeInput=this }
     }
     private fun spinner(options: List<String>): Spinner = Spinner(this).apply {
         adapter=ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, options)
+        minimumHeight=dp(46)
     }
     private fun panel(): LinearLayout = LinearLayout(this).apply {
-        orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(14),dp(16),dp(16)); background=shape(panel,Color.rgb(46,93,114))
-        val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,14,0,12); root.addView(this,lp)
+        orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(14)); background=shape(panel,Color.rgb(46,93,114))
+        val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(10),0,dp(8)); root.addView(this,lp)
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); showScreen(0) }
     private fun showScreen(tab: Int) {
         currentTab=tab
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        latestResult=""; keyboardVisible=false
         root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(12),dp(12),dp(12)); setBackgroundColor(bg) }
-        val scroll=ScrollView(this).apply { isFillViewport=false; addView(root) }
+        val scroll=ScrollView(this).apply { fillViewport=false; addView(root) }
         val frame=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(bg) }
         frame.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        resultDock=TextView(this).apply { textSize=21f;setTextColor(accent);setPadding(dp(18),dp(12),dp(18),dp(12));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
+        resultDock=TextView(this).apply { textSize=17f;setTextColor(accent);setPadding(dp(14),dp(8),dp(14),dp(8));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
+        resultDock.maxLines=1
+        resultDock.ellipsize=android.text.TextUtils.TruncateAt.END
         frame.addView(resultDock,LinearLayout.LayoutParams(-1,-2));setContentView(frame)
-        root.addView(text("HARDNESS LAB",26f,accent).apply { setTypeface(null,Typeface.BOLD) })
-        root.addView(text("Расчёт твёрдости материалов",14f,Color.LTGRAY))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            frame.setOnApplyWindowInsetsListener { _, insets ->
+                val opened=insets.isVisible(WindowInsets.Type.ime())
+                if (keyboardVisible!=opened) { keyboardVisible=opened; refreshDock() }
+                insets
+            }
+        } else {
+            frame.viewTreeObserver.addOnGlobalLayoutListener {
+                val rect=android.graphics.Rect()
+                frame.getWindowVisibleDisplayFrame(rect)
+                val opened=(frame.rootView.height-rect.bottom)>dp(170)
+                if (keyboardVisible!=opened) { keyboardVisible=opened; refreshDock() }
+            }
+        }
+        root.addView(text("HARDNESS LAB",25f,accent).apply { setTypeface(null,Typeface.BOLD) })
+        root.addView(text("Расчёт твёрдости материалов",13f,Color.LTGRAY))
         val tabs=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL };root.addView(tabs)
         listOf("Виккерс","Бринелль","Толщина").forEachIndexed { i,label ->
-            tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(55),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
+            tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(49),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
         }
         when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); else -> thicknessScreen() }
-        root.addView(text("Офлайн • Формулы из Excel v.2",12f,Color.GRAY))
+        root.addView(text("Офлайн • Справочные данные Excel v2",11f,Color.GRAY))
     }
     private fun watch(inputs: List<EditText>, spinners: List<Spinner>, update: () -> Unit) {
         inputs.forEach { it.addTextChangedListener(object:TextWatcher {
@@ -225,17 +255,45 @@ class MainActivity : Activity() {
         val hardness=field("Введите прогнозируемую твёрдость", "")
         val hardnessLabel=text("Прогнозируемая твёрдость HRC",14f,Color.LTGRAY)
         p.addView(hardnessLabel);p.addView(hardness);clearButton(p,listOf(hardness))
-        val out=text("",18f,accent);p.addView(out)
+        val out=text("",18f,accent)
+        val resultsContainer=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        p.addView(resultsContainer)
+        p.addView(out)
+        fun renderRows(rows: List<String>) {
+            resultsContainer.removeAllViews()
+            if(rows.isEmpty()) return
+            val heading=text("Результаты · ${rows.size}",17f,Color.WHITE)
+            heading.setTypeface(null,Typeface.BOLD)
+            resultsContainer.addView(heading)
+            val headers=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+            listOf("Шкала / шарик", "Нагрузка", "Мин. толщина", "").forEachIndexed { i,label ->
+                headers.addView(text(label,10f,Color.LTGRAY),LinearLayout.LayoutParams(0,-2,listOf(1.25f,1.35f,1.25f,0.35f)[i]))
+            }
+            resultsContainer.addView(headers)
+            rows.forEachIndexed { index, entry ->
+                val d=Regex("D=([^·]+)").find(entry)?.groupValues?.get(1)?.trim()
+                val f=Regex("F=([^·]+)").find(entry)?.groupValues?.get(1)?.trim()
+                val thick=entry.substringAfterLast(": ","—")
+                val scale=if(d!=null) d else entry.substringBefore(":")
+                val loadValue=if(f!=null) f.substringBefore(" (") else "—"
+                val cells=listOf(scale,loadValue,thick,"✓")
+                val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; setPadding(dp(3),dp(5),dp(3),dp(5)); if(index%2==0) background=shape(Color.rgb(29,44,61)) }
+                cells.forEachIndexed { i,value ->
+                    val cell=text(value,if(i==3) 17f else 12f,if(i>=2) accent else Color.WHITE)
+                    row.addView(cell,LinearLayout.LayoutParams(0,-2,listOf(1.25f,1.35f,1.25f,0.35f)[i]))
+                }
+                resultsContainer.addView(row)
+            }
+        }
         val note=text("",13f,Color.LTGRAY);p.addView(note)
-        out.addTextChangedListener(object:TextWatcher { override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){val value=s?.toString().orEmpty();showResult(if(value.isBlank()) "" else value.lines().take(2).joinToString("  •  ")+(if(value.lines().size>2) "  …" else ""))};override fun afterTextChanged(s:Editable?){} })
         watch(listOf(hardness),listOf(method,material,vMaterial)) {
             val m=method.selectedItemPosition
             material.visibility=if(m==4) View.VISIBLE else View.GONE;materialLabel.visibility=material.visibility
             vMaterial.visibility=if(m==2||m==3) View.VISIBLE else View.GONE;vMaterialLabel.visibility=vMaterial.visibility
             hardnessLabel.text="Прогнозируемая твёрдость "+when(m){0->"HRC";4->"HB";else->"HV"}
-            if(hardness.text.isBlank()) {out.text="";note.text="";return@watch}
+            if(hardness.text.isBlank()) {out.text="";note.text="";renderRows(emptyList());showResult("");return@watch}
             val h=hardness.text.toString().replace(',','.').toDoubleOrNull()
-            if(h==null||!h.isFinite()||h<=0){out.text="Введите положительную твёрдость";note.text="";return@watch}
+            if(h==null||!h.isFinite()||h<=0){renderRows(emptyList());out.text="Введите положительную твёрдость";note.text="";return@watch}
             val rows=mutableListOf<String>()
             val mat=if(vMaterial.selectedItemPosition==0) "steel" else "nonferrous"
             when(m) {
@@ -250,9 +308,9 @@ class MainActivity : Activity() {
                     thicknessTables.lookup("9450_"+mat+"_"+key,h)?.let { rows.add("$label: ${it.pretty()} мм") }
                 }
                 4 -> {
-                    if(h>650.0) {out.text="Вне области ГОСТ 9012-59: HB > 650";note.text="";return@watch}
+                    if(h>650.0) {renderRows(emptyList());out.text="Вне области ГОСТ 9012-59: HB > 650";note.text="";return@watch}
                     val k=brinellK(material.selectedItemPosition,h)
-                    if(k==null) {out.text="Для материала и твёрдости нет допустимого K по таблице 2";note.text="";return@watch}
+                    if(k==null) {renderRows(emptyList());out.text="Для материала и твёрдости нет допустимого K по таблице 2";note.text="";return@watch}
                     for(d in listOf(2.5,5.0,10.0)) for(load in brinellStandardLoads(d,k)) {
                         val key="hb_"+d.shortLabel()+"_"+load.shortLabel()
                         val value=thicknessTables.lookup(key,h)
@@ -268,7 +326,9 @@ class MainActivity : Activity() {
                     note.text="ГОСТ 9012-59: таблицы 2–3, d/D от 0,24 до 0,60; толщина — из Excel. Проверка d/D предварительная, по прогнозу HB."
                 }
             }
-            out.text=if(rows.isEmpty()) "Нет допустимых табличных сочетаний для введённой твёрдости" else rows.joinToString("\n")
+            renderRows(rows)
+            out.text=if(rows.isEmpty()) "Нет допустимых табличных сочетаний для введённой твёрдости" else ""
+            showResult(if(rows.isEmpty()) "Нет допустимых режимов" else "Найдено режимов: ${rows.size}")
             if(m!=4) note.text="Значения из Excel v2.0. Нагрузки без табличных данных не показаны."
         }
     }
