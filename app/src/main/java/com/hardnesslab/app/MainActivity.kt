@@ -107,6 +107,12 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(24, 35, 51)
     private val accent = Color.rgb(75, 196, 235)
     private val successGreen = Color.rgb(34, 197, 94)
+    private val hrcRed = Color.rgb(255, 104, 120)
+    private val hbGreen = Color.rgb(75, 214, 155)
+    private val hvBlue = Color.rgb(60, 191, 255)
+    private data class Measurement(val first: String, val second: String, val result: String)
+    private val vickersHistory = mutableListOf<Measurement>()
+    private val brinellHistory = mutableListOf<Measurement>()
     private val muted = Color.rgb(164, 178, 194)
     private lateinit var root: LinearLayout
     private lateinit var resultDock: TextView
@@ -126,9 +132,9 @@ class MainActivity : Activity() {
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun shape(color: Int, stroke: Int? = null): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius=dp(16).toFloat(); if(stroke!=null) setStroke(dp(1),stroke) }
     private fun showResult(message: String) { latestResult = message; refreshDock() }
-    private fun actionButtons(p: LinearLayout, fields: List<EditText>) {
+    private fun actionButtons(p: LinearLayout, fields: List<EditText>, onSubmit: (() -> Unit)? = null) {
         val bar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
-        val submit=Button(this).apply { text="Ввод";isAllCaps=false;setTextColor(Color.BLACK);background=shape(accent);setOnClickListener { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken,0);currentFocus?.clearFocus() } }
+        val submit=Button(this).apply { text="Ввод";isAllCaps=false;setTextColor(Color.BLACK);background=shape(accent);setOnClickListener { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken,0);currentFocus?.clearFocus(); onSubmit?.invoke() } }
         val clear=Button(this).apply { text="Очистить";isAllCaps=false;setTextColor(Color.WHITE);background=shape(Color.rgb(68,80,95));setOnClickListener { fields.forEach { it.text.clear() };showResult("") } }
         val l=LinearLayout.LayoutParams(0,dp(42),1f);l.setMargins(dp(3),dp(5),dp(3),dp(4));bar.addView(submit,l)
         val r=LinearLayout.LayoutParams(0,dp(42),1f);r.setMargins(dp(3),dp(5),dp(3),dp(4));bar.addView(clear,r);p.addView(bar)
@@ -311,18 +317,23 @@ class MainActivity : Activity() {
                 }
                 var count=0
                 candidates.forEach { s ->
-                    val lines=targetScales.map { to ->
-                        val a=conversionTables.convert(s,from,to,x)
-                        val label=listOf("HRC","HB","HV")[to]
-                        if(a.value!=null) "$label  ${String.format(Locale("ru"),"%.2f",a.value)} · ${a.status}"
-                        else "$label  — · ${a.status}"
-                    }
-                    if(lines.any { !it.contains("Перевод не предусмотрен") }) {
+                    val answers=targetScales.map { to -> to to conversionTables.convert(s,from,to,x) }
+                    if(answers.any { it.second.value!=null }) {
                         count++
                         val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(10),dp(12),dp(10));background=shape(Color.rgb(31,48,66)) }
                         card.addView(text(s.document,15f,accent).apply { setTypeface(null,Typeface.BOLD) })
                         card.addView(text(s.material,12f,Color.LTGRAY))
-                        lines.forEach { card.addView(text(it,14f,if(it.contains("—")) muted else Color.WHITE)) }
+                        val columns=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+                        answers.forEach { (to,a) ->
+                            val label=listOf("HRC","HB","HV")[to]
+                            val color=listOf(hrcRed,hbGreen,hvBlue)[to]
+                            val cell=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(9),dp(8),dp(9),dp(8));background=shape(Color.rgb(23,39,55))}
+                            cell.addView(text(label,13f,color).apply {setTypeface(null,Typeface.BOLD)})
+                            cell.addView(text(if(a.value==null) "—" else String.format(Locale("ru"),"%.2f",a.value),19f,if(a.value==null) muted else color))
+                            cell.addView(text(a.status,10f,muted))
+                            columns.addView(cell,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(3),dp(5),dp(3),0)})
+                        }
+                        card.addView(columns)
                         results.addView(card,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(4),0,dp(4))})
                     }
                 }
@@ -370,15 +381,55 @@ class MainActivity : Activity() {
         }
         update()
     }
+    private fun measurementHistory(p: LinearLayout, entries: List<Measurement>, scale: String): LinearLayout {
+        val section=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        p.addView(section)
+        fun render() {
+            section.removeAllViews()
+            if(entries.isEmpty()) return
+            section.addView(text("История измерений · ${entries.size}",15f,Color.WHITE).apply {setTypeface(null,Typeface.BOLD)})
+            entries.asReversed().forEachIndexed { idx, entry ->
+                val line=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(10),dp(7),dp(10),dp(7));background=shape(Color.rgb(31,48,66))}
+                val details=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+                details.addView(text("№ ${entries.size-idx}   d1 / d2",11f,muted))
+                details.addView(text("${entry.first} / ${entry.second}",13f,Color.WHITE))
+                line.addView(details,LinearLayout.LayoutParams(0,-2,1f))
+                line.addView(text("$scale ${entry.result}",21f,if(scale=="HB") hbGreen else hvBlue).apply {setTypeface(null,Typeface.BOLD)})
+                section.addView(line,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(4),0,dp(4))})
+            }
+        }
+        render()
+        return section
+    }
+    private fun appendMeasurement(section: LinearLayout, entries: MutableList<Measurement>, first: EditText, second: EditText, result: TextView, scale: String) {
+        val value=result.text.toString()
+        if(!value.startsWith("$scale  ")) return
+        entries.add(Measurement(first.text.toString(),second.text.toString(),value.substringAfter("$scale  ")))
+        // Recreate the rows only after the user confirms a measurement.
+        section.removeAllViews()
+        section.addView(text("История измерений · ${entries.size}",15f,Color.WHITE).apply {setTypeface(null,Typeface.BOLD)})
+        entries.asReversed().forEachIndexed { idx, entry ->
+            val row=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(10),dp(7),dp(10),dp(7));background=shape(Color.rgb(31,48,66))}
+            val info=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+            info.addView(text("№ ${entries.size-idx}   d1 / d2",11f,muted))
+            info.addView(text("${entry.first} / ${entry.second}",13f,Color.WHITE))
+            row.addView(info,LinearLayout.LayoutParams(0,-2,1f))
+            row.addView(text("$scale ${entry.result}",21f,if(scale=="HB") hbGreen else hvBlue).apply {setTypeface(null,Typeface.BOLD)})
+            section.addView(row,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(4),0,dp(4))})
+        }
+    }
     private fun vickersScreen() {
         val p=panel();p.addView(text("Виккерс · HV",18f))
-        val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"))
+        val mode=spinner(listOf("Прямой ввод диагоналей, мм","X10","X20","Микротвёрдость (0,3 мкм/дел.)"))
         val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"))
+        if(prefs.getBoolean("v_mode_default_x20",true)) { mode.setSelection(2);prefs.edit().putBoolean("v_mode_default_x20",false).apply() }
         compactSelectors(p,mode,units)
         p.addView(text("Нагрузка",13f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Диагональ 1", "");val b=field("Диагональ 2", "")
         pairedFields(p,a,b,"Диагональ")
-        clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
+        val out=text("",23f,hvBlue);p.addView(out)
+        val history=measurementHistory(p,vickersHistory,"HV")
+        actionButtons(p,listOf(a,b)) { appendMeasurement(history,vickersHistory,a,b,out,"HV") }
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val kgf=vLoads[load.selectedItemPosition.coerceIn(0,vLoads.lastIndex)]
@@ -400,7 +451,9 @@ class MainActivity : Activity() {
         p.addView(text("Нагрузка",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Отпечаток 1", "");val b=field("Отпечаток 2", "")
         pairedFields(p,a,b,"Отпечаток")
-        clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
+        val out=text("",23f,hbGreen);p.addView(out)
+        val history=measurementHistory(p,brinellHistory,"HB")
+        actionButtons(p,listOf(a,b)) { appendMeasurement(history,brinellHistory,a,b,out,"HB") }
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val diameter=listOf(1.0,2.5,5.0,10.0)[ball.selectedItemPosition]
