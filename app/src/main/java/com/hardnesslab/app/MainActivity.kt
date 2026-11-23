@@ -123,93 +123,102 @@ class MainActivity : Activity() {
     }
     private fun Double.pretty(): String = String.format(Locale("ru"),"%.2f",this)
     private fun EditText.num(): Double = text.toString().replace(',','.').toDouble()
+    private val vLoads = listOf(0.2,0.3,0.5,1.0,2.0,3.0,5.0,10.0,20.0,30.0,50.0)
+    private val bLoads = listOf(62.5,100.0,125.0,187.5,250.0,500.0,750.0,1000.0,1500.0,3000.0)
+    private fun Double.shortLabel(): String = if (this == toLong().toDouble()) toLong().toString() else toString()
+    private fun loadMenu(values: List<Double>, units: Spinner, load: Spinner, key: String, update: () -> Unit) {
+        val kgf = units.selectedItemPosition == 1
+        val old = prefs.getInt(key, 0).coerceIn(0,values.lastIndex)
+        load.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,values.map {
+            if (kgf) "${it.shortLabel()} кгс" else "${(it*9.80665).pretty()} Н"
+        })
+        load.setSelection(old)
+        load.onItemSelectedListener = object: android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long) { prefs.edit().putInt(key,pos).apply();update() }
+            override fun onNothingSelected(p:android.widget.AdapterView<*>?) {}
+        }
+        update()
+    }
     private fun vickersScreen() {
         val p=panel();p.addView(text("Твёрдость по Виккерсу",22f))
         val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"));p.addView(mode)
         val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
-        val a=field("Диагональ 1", "");val b=field("Диагональ 2", "");val load=field("Нагрузка", "")
-        labeled(p,"Диагональ 1 (в единицах выбранного режима)",a)
-        labeled(p,"Диагональ 2 (в единицах выбранного режима)",b)
-        labeled(p,"Нагрузка (Н или кгс)",load)
-        clearButton(p,listOf(a,b,load))
-        val out=text("",28f,accent);p.addView(out)
-        watch(listOf(a,b,load),listOf(mode,units)) {
-            if(listOf(a,b,load).any { it.text.isBlank() }) { out.text=""; return@watch }
-            out.text=try { "HV  ${Hardness.vickers(a.num(),b.num(),load.num(),mode.selectedItemPosition,units.selectedItemPosition==0).pretty()}" } catch(e:Exception) { "Проверьте введённые значения" }
+        p.addView(text("Выберите нагрузку",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
+        val a=field("Диагональ 1", "");val b=field("Диагональ 2", "")
+        labeled(p,"Диагональ 1 (в единицах режима)",a);labeled(p,"Диагональ 2 (в единицах режима)",b)
+        clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
+        val update = {
+            if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
+                val kgf=vLoads[load.selectedItemPosition.coerceIn(0,vLoads.lastIndex)]
+                val newtons=units.selectedItemPosition==0
+                val result=Hardness.vickers(a.num(),b.num(),if(newtons) kgf*9.80665 else kgf,mode.selectedItemPosition,newtons)
+                require(result.isFinite() && result>0);"HV  ${result.pretty()}"
+            } catch(_:Exception) {"Проверьте введённые значения"}
         }
+        watch(listOf(a,b),listOf(mode,units)) { loadMenu(vLoads,units,load,"v_load",update) }
     }
     private fun brinellScreen() {
         val p=panel();p.addView(text("Твёрдость по Бринеллю",22f))
         val microscope=spinner(listOf("Диаметр отпечатка, мм","Отсчёт микроскопа (×0,01 мм)"));p.addView(microscope)
         val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
-        val ball=field("Диаметр шарика, мм","");val a=field("Отпечаток 1","");val b=field("Отпечаток 2","");val load=field("Нагрузка","")
-        labeled(p,"Диаметр шарика, мм",ball)
-        labeled(p,"Отпечаток 1 (мм или деления микроскопа)",a)
-        labeled(p,"Отпечаток 2 (мм или деления микроскопа)",b)
-        labeled(p,"Нагрузка (Н или кгс)",load)
-        clearButton(p,listOf(ball,a,b,load))
-        val out=text("",28f,accent);p.addView(out)
-        watch(listOf(ball,a,b,load),listOf(microscope,units)) {
-            if(listOf(ball,a,b,load).any { it.text.isBlank() }) { out.text=""; return@watch }
-            out.text=try { "HB  ${Hardness.brinell(ball.num(),a.num(),b.num(),load.num(),units.selectedItemPosition==0,microscope.selectedItemPosition==1).pretty()}" } catch(e:Exception) { "Проверьте: 0 < отпечаток < шарик" }
+        p.addView(text("Диаметр шарика, мм",14f,Color.LTGRAY))
+        val ball=spinner(listOf("1 мм","2,5 мм","5 мм","10 мм"));p.addView(ball)
+        p.addView(text("Нагрузка",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
+        val a=field("Отпечаток 1", "");val b=field("Отпечаток 2", "")
+        labeled(p,"Отпечаток 1 (мм или деления)",a);labeled(p,"Отпечаток 2 (мм или деления)",b)
+        clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
+        val update = {
+            if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
+                val diameter=listOf(1.0,2.5,5.0,10.0)[ball.selectedItemPosition]
+                val kgf=bLoads[load.selectedItemPosition.coerceIn(0,bLoads.lastIndex)]
+                val newtons=units.selectedItemPosition==0
+                val result=Hardness.brinell(diameter,a.num(),b.num(),if(newtons) kgf*9.80665 else kgf,newtons,microscope.selectedItemPosition==1)
+                require(result.isFinite() && result>0);"HB  ${result.pretty()}"
+            } catch(_:Exception) {"Проверьте: 0 < отпечаток < шарик"}
         }
+        watch(listOf(a,b),listOf(microscope,units,ball)) { loadMenu(bLoads,units,load,"b_load",update) }
     }
     private fun thicknessScreen() {
-        val p=panel(); p.addView(text("Минимальная толщина образца",22f))
-        p.addView(text("По справочным таблицам Excel, версия 2.0",13f,Color.LTGRAY))
+        val p=panel();p.addView(text("Минимальная толщина образца",22f))
+        p.addView(text("Справочные таблицы Excel v2.0",13f,Color.LTGRAY))
         val method=spinner(listOf("Роквелл (HRC)","Виккерс · ГОСТ Р ИСО 6507-4-2007","Виккерс · ГОСТ 2999-59","Виккерс · ГОСТ 9450-76","Бринелль · ГОСТ 9012-59"))
         p.addView(text("Метод и стандарт",14f,Color.LTGRAY));p.addView(method)
-        val material=spinner(listOf("Сталь","Цветные металлы"))
-        p.addView(text("Материал (для ГОСТ 2999 и 9450)",14f,Color.LTGRAY));p.addView(material)
-        val load=spinner(listOf("HV0,2","HV0,3","HV0,5","HV1","HV5","HV10","HV20","HV30","HV50"))
-        p.addView(text("Нагрузка Виккерса",14f,Color.LTGRAY));p.addView(load)
-        val ball=spinner(listOf("2,5 мм","5 мм","10 мм"))
-        val hbLoad=spinner(listOf("62,5 кгс","100 кгс","125 кгс","187,5 кгс","250 кгс","500 кгс","750 кгс","1000 кгс","1500 кгс","3000 кгс"))
-        p.addView(text("Диаметр шарика Бринелля",14f,Color.LTGRAY));p.addView(ball)
-        p.addView(text("Нагрузка Бринелля",14f,Color.LTGRAY));p.addView(hbLoad)
-        val hb=field("Ожидаемая твёрдость HB", "")
-        val actual=field("Фактическая толщина, мм (необязательно)", "")
-        labeled(p,"Твёрдость HB",hb);labeled(p,"Фактическая толщина образца, мм (необязательно)",actual)
-        clearButton(p,listOf(hb,actual))
-        p.addView(text("В исходном файле HV = ROUND(HB × 1,05); HRC определяется по отдельной формуле.",12f,Color.LTGRAY))
+        val materialLabel=text("Материал",14f,Color.LTGRAY);p.addView(materialLabel)
+        val material=spinner(listOf("Сталь","Цветные металлы"));p.addView(material)
+        val loadLabel=text("Шкала Виккерса",14f,Color.LTGRAY);p.addView(loadLabel)
+        val hvLoad=spinner(listOf("HV0,2","HV0,3","HV0,5","HV1","HV5","HV10","HV20","HV30","HV50"));p.addView(hvLoad)
+        val ballLabel=text("Диаметр шарика Бринелля",14f,Color.LTGRAY);p.addView(ballLabel)
+        val ball=spinner(listOf("2,5 мм","5 мм","10 мм"));p.addView(ball)
+        val hbLoadLabel=text("Нагрузка Бринелля",14f,Color.LTGRAY);p.addView(hbLoadLabel)
+        val hbLoad=spinner(listOf("62,5 кгс","100 кгс","125 кгс","187,5 кгс","250 кгс","500 кгс","750 кгс","1000 кгс","1500 кгс","3000 кгс"));p.addView(hbLoad)
+        val hardness=field("Введите твёрдость", "");val hardnessLabel=text("Твёрдость HRC",14f,Color.LTGRAY)
+        p.addView(hardnessLabel);p.addView(hardness);clearButton(p,listOf(hardness))
         val out=text("",24f,accent);p.addView(out)
         val note=text("",13f,Color.LTGRAY);p.addView(note)
-        watch(listOf(hb,actual),listOf(method,material,load,ball,hbLoad)) {
-            val mode=method.selectedItemPosition
-            material.visibility=if(mode==2 || mode==3) View.VISIBLE else View.GONE
-            load.visibility=if(mode in 1..3) View.VISIBLE else View.GONE
-            ball.visibility=if(mode==4) View.VISIBLE else View.GONE
-            hbLoad.visibility=if(mode==4) View.VISIBLE else View.GONE
-            if(hb.text.isBlank()) { out.text=""; note.text=""; return@watch }
-            try {
-                val hardness=hb.num();require(hardness>0)
-                val hv=floor(hardness*1.05+0.5)
-                // Approximate HB -> HRC conversion is not a validated Excel formula.
-                val hrc: Double? = null
-                val hvNames=listOf("02","03","05","1","5","10","20","30","50")
-                val index=load.selectedItemPosition
-                val mat=if(material.selectedItemPosition==0) "steel" else "nonferrous"
-                val key=when(mode) {
-                    0 -> "rockwell"
-                    1 -> "iso"+hvNames[index]
-                    2 -> "2999_"+mat+"_"+listOf("1","5","10","20","30").getOrNull(index-3).orEmpty()
-                    3 -> "9450_"+mat+"_"+listOf("02","05").getOrNull(if(index==0) 0 else if(index==2) 1 else -1).orEmpty()
-                    else -> "hb_"+listOf("2.5","5","10")[ball.selectedItemPosition]+"_"+listOf("62.5","100","125","187.5","250","500","750","1000","1500","3000")[hbLoad.selectedItemPosition]
-                }
-                val supported=when(mode) { 2 -> index in 3..7; 3 -> index==0 || index==2; else -> true }
-                val value=if(!supported) null else thicknessTables.lookup(key, when(mode){0->hrc ?: -1.0;4->hardness;else->hv},mode==0)
-                if(mode==0) {
-                    out.text="Роквелл: требуется подтверждённая формула из Excel"
-                    note.text="Приближённый пересчёт HB → HRC отключён, чтобы не показывать недостоверный результат."
-                } else if(value==null || !value.isFinite() || value<=0) {
-                    out.text="Нет табличного значения"
-                    note.text="Выбранное сочетание не поддерживается таблицей или выходит за диапазон. Для Бринелля дополнительно проверьте ограничения ГОСТ и исходного Excel."
-                } else {
-                    out.text="Минимум: ${value.pretty()} мм"
-                    val actualValue=actual.text.toString().replace(',','.').toDoubleOrNull()
-                    note.text="HB ${hardness.pretty()} · HV ${hv.pretty()}"+(if(actualValue!=null) "\nОбразец: "+(if(actualValue>=value) "толщина достаточна" else "толщина недостаточна") else "")+"\nТабличный результат; проверяйте применимость метода и нагрузки."
-                }
-            } catch (_: Exception) {out.text="Введите положительную твёрдость HB";note.text=""}
+        watch(listOf(hardness),listOf(method,material,hvLoad,ball,hbLoad)) {
+            val m=method.selectedItemPosition
+            val matVisible=m==2||m==3
+            material.visibility=if(matVisible) View.VISIBLE else View.GONE;materialLabel.visibility=material.visibility
+            hvLoad.visibility=if(m in 1..3) View.VISIBLE else View.GONE;loadLabel.visibility=hvLoad.visibility
+            ball.visibility=if(m==4) View.VISIBLE else View.GONE;ballLabel.visibility=ball.visibility
+            hbLoad.visibility=ball.visibility;hbLoadLabel.visibility=ball.visibility
+            hardnessLabel.text="Твёрдость "+when(m){0->"HRC";4->"HB";else->"HV"}
+            if(hardness.text.isBlank()) {out.text="";note.text="";return@watch}
+            val value=hardness.text.toString().replace(',','.').toDoubleOrNull()
+            if(value==null||!value.isFinite()||value<=0){out.text="Введите положительное значение";note.text="";return@watch}
+            val idx=hvLoad.selectedItemPosition
+            val mat=if(material.selectedItemPosition==0) "steel" else "nonferrous"
+            val key=when(m){
+                0->"rockwell"
+                1->"iso"+listOf("02","03","05","1","5","10","20","30","50")[idx]
+                2->"2999_"+mat+"_"+listOf("1","5","10","20","30").getOrNull(idx-3).orEmpty()
+                3->"9450_"+mat+"_"+listOf("02","05").getOrNull(if(idx==0)0 else if(idx==2)1 else -1).orEmpty()
+                else->"hb_"+listOf("2.5","5","10")[ball.selectedItemPosition]+"_"+listOf("62.5","100","125","187.5","250","500","750","1000","1500","3000")[hbLoad.selectedItemPosition]
+            }
+            val supported=when(m){2->idx in 3..7;3->idx==0||idx==2;else->true}
+            val result=if(supported) thicknessTables.lookup(key,value,m==0) else null
+            if(result!=null && result.isFinite() && result>0){out.text="Минимум: ${result.pretty()} мм";note.text="Значение из справочной таблицы выбранного метода"}
+            else {out.text="Нет табличного значения";note.text="Проверьте шкалу, диапазон твёрдости и параметры испытания"}
         }
     }
 }
