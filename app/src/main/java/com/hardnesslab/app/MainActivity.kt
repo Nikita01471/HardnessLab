@@ -9,6 +9,7 @@ import android.widget.*
 import android.text.InputType
 import android.text.TextWatcher
 import android.text.Editable
+import android.content.Context
 import kotlin.math.sqrt
 import java.util.Locale
 import kotlin.math.floor
@@ -59,6 +60,23 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(24, 35, 51)
     private val accent = Color.rgb(75, 196, 235)
     private lateinit var root: LinearLayout
+    private val prefs by lazy { getSharedPreferences("hardnesslab_modes_v21", Context.MODE_PRIVATE) }
+    private fun remember(key: String, widget: Spinner) {
+        widget.setSelection(prefs.getInt(key, 0).coerceIn(0, widget.adapter.count - 1))
+        widget.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt(key, position).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+    }
+    private fun labeled(p: LinearLayout, label: String, input: EditText) {
+        p.addView(text(label, 14f, Color.LTGRAY)); p.addView(input)
+    }
+    private fun clearButton(p: LinearLayout, fields: List<EditText>) {
+        p.addView(Button(this).apply { text="Очистить"; isAllCaps=false; setOnClickListener { fields.forEach { it.text.clear() } } })
+    }
+    private var currentTab = 0
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
         text=s; textSize=size; setTextColor(color); setPadding(0,12,0,12)
@@ -77,6 +95,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); showScreen(0) }
     private fun showScreen(tab: Int) {
+        currentTab=tab
         root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(24,26,24,24); setBackgroundColor(bg) }
         val scroll=ScrollView(this).apply { addView(root) }; setContentView(scroll)
         root.addView(text("HARDNESS LAB",26f,accent).apply { setTypeface(null,Typeface.BOLD) })
@@ -94,8 +113,11 @@ class MainActivity : Activity() {
             override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int) { update() }
             override fun afterTextChanged(s:Editable?) {}
         }) }
-        spinners.forEach { it.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,position:Int,id:Long) { update() }
+        spinners.forEachIndexed { index, it ->
+            val key="tab_${currentTab}_spinner_$index"
+            it.setSelection(prefs.getInt(key,0).coerceIn(0,it.adapter.count-1))
+            it.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,position:Int,id:Long) { prefs.edit().putInt(key,position).apply(); update() }
             override fun onNothingSelected(p:android.widget.AdapterView<*>?) {}
         } };update()
     }
@@ -106,9 +128,13 @@ class MainActivity : Activity() {
         val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"));p.addView(mode)
         val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
         val a=field("Диагональ 1", "");val b=field("Диагональ 2", "");val load=field("Нагрузка", "")
-        listOf(a,b,load).forEach(p::addView)
+        labeled(p,"Диагональ 1 (в единицах выбранного режима)",a)
+        labeled(p,"Диагональ 2 (в единицах выбранного режима)",b)
+        labeled(p,"Нагрузка (Н или кгс)",load)
+        clearButton(p,listOf(a,b,load))
         val out=text("",28f,accent);p.addView(out)
         watch(listOf(a,b,load),listOf(mode,units)) {
+            if(listOf(a,b,load).any { it.text.isBlank() }) { out.text=""; return@watch }
             out.text=try { "HV  ${Hardness.vickers(a.num(),b.num(),load.num(),mode.selectedItemPosition,units.selectedItemPosition==0).pretty()}" } catch(e:Exception) { "Проверьте введённые значения" }
         }
     }
@@ -116,10 +142,15 @@ class MainActivity : Activity() {
         val p=panel();p.addView(text("Твёрдость по Бринеллю",22f))
         val microscope=spinner(listOf("Диаметр отпечатка, мм","Отсчёт микроскопа (×0,01 мм)"));p.addView(microscope)
         val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
-        val ball=field("Диаметр шарика, мм","5");val a=field("Отпечаток 1","2.2");val b=field("Отпечаток 2","2.2");val load=field("Нагрузка","1226")
-        listOf(ball,a,b,load).forEach(p::addView)
+        val ball=field("Диаметр шарика, мм","");val a=field("Отпечаток 1","");val b=field("Отпечаток 2","");val load=field("Нагрузка","")
+        labeled(p,"Диаметр шарика, мм",ball)
+        labeled(p,"Отпечаток 1 (мм или деления микроскопа)",a)
+        labeled(p,"Отпечаток 2 (мм или деления микроскопа)",b)
+        labeled(p,"Нагрузка (Н или кгс)",load)
+        clearButton(p,listOf(ball,a,b,load))
         val out=text("",28f,accent);p.addView(out)
         watch(listOf(ball,a,b,load),listOf(microscope,units)) {
+            if(listOf(ball,a,b,load).any { it.text.isBlank() }) { out.text=""; return@watch }
             out.text=try { "HB  ${Hardness.brinell(ball.num(),a.num(),b.num(),load.num(),units.selectedItemPosition==0,microscope.selectedItemPosition==1).pretty()}" } catch(e:Exception) { "Проверьте: 0 < отпечаток < шарик" }
         }
     }
@@ -136,9 +167,10 @@ class MainActivity : Activity() {
         val hbLoad=spinner(listOf("62,5 кгс","100 кгс","125 кгс","187,5 кгс","250 кгс","500 кгс","750 кгс","1000 кгс","1500 кгс","3000 кгс"))
         p.addView(text("Диаметр шарика Бринелля",14f,Color.LTGRAY));p.addView(ball)
         p.addView(text("Нагрузка Бринелля",14f,Color.LTGRAY));p.addView(hbLoad)
-        val hb=field("Ожидаемая твёрдость HB", "330")
-        val actual=field("Фактическая толщина, мм (необязательно)", "1.9")
-        p.addView(hb);p.addView(actual)
+        val hb=field("Ожидаемая твёрдость HB", "")
+        val actual=field("Фактическая толщина, мм (необязательно)", "")
+        labeled(p,"Твёрдость HB",hb);labeled(p,"Фактическая толщина образца, мм (необязательно)",actual)
+        clearButton(p,listOf(hb,actual))
         p.addView(text("В исходном файле HV = ROUND(HB × 1,05); HRC определяется по отдельной формуле.",12f,Color.LTGRAY))
         val out=text("",24f,accent);p.addView(out)
         val note=text("",13f,Color.LTGRAY);p.addView(note)
@@ -148,10 +180,12 @@ class MainActivity : Activity() {
             load.visibility=if(mode in 1..3) View.VISIBLE else View.GONE
             ball.visibility=if(mode==4) View.VISIBLE else View.GONE
             hbLoad.visibility=if(mode==4) View.VISIBLE else View.GONE
+            if(hb.text.isBlank()) { out.text=""; note.text=""; return@watch }
             try {
                 val hardness=hb.num();require(hardness>0)
                 val hv=floor(hardness*1.05+0.5)
-                val hrc=if(hardness<=80) null else kotlin.math.round((hardness-80)/10.0*2)/2.0
+                // Approximate HB -> HRC conversion is not a validated Excel formula.
+                val hrc: Double? = null
                 val hvNames=listOf("02","03","05","1","5","10","20","30","50")
                 val index=load.selectedItemPosition
                 val mat=if(material.selectedItemPosition==0) "steel" else "nonferrous"
@@ -164,7 +198,10 @@ class MainActivity : Activity() {
                 }
                 val supported=when(mode) { 2 -> index in 3..7; 3 -> index==0 || index==2; else -> true }
                 val value=if(!supported) null else thicknessTables.lookup(key, when(mode){0->hrc ?: -1.0;4->hardness;else->hv},mode==0)
-                if(value==null || !value.isFinite() || value<=0) {
+                if(mode==0) {
+                    out.text="Роквелл: требуется подтверждённая формула из Excel"
+                    note.text="Приближённый пересчёт HB → HRC отключён, чтобы не показывать недостоверный результат."
+                } else if(value==null || !value.isFinite() || value<=0) {
                     out.text="Нет табличного значения"
                     note.text="Выбранное сочетание не поддерживается таблицей или выходит за диапазон. Для Бринелля дополнительно проверьте ограничения ГОСТ и исходного Excel."
                 } else {
