@@ -24,18 +24,22 @@ import kotlin.math.floor
 /** Formulas transcribed from the user's workbook, including microscope conversions. */
 object Hardness {
     fun vickers(d1: Double, d2: Double, load: Double, mode: Int, newtons: Boolean): Double {
+        require(d1.isFinite() && d2.isFinite() && load.isFinite() && d1 > 0 && d2 > 0 && mode in 0..3)
         val mean = (d1 + d2) / 2
         val diagonalMm = when(mode) { 0 -> mean; 1 -> mean / 1000; 2 -> mean / 2000; else -> mean * 0.3 / 1000 }
         require(diagonalMm > 0 && load > 0)
         return (if(newtons) 0.1891 else 1.854) * load / (diagonalMm * diagonalMm)
     }
     fun brinell(ball: Double, d1: Double, d2: Double, load: Double, newtons: Boolean, microscope100: Boolean): Double {
-        val d = (d1 + d2) / 2 * (if(microscope100) 0.01 else 1.0)
+        val factor = if(microscope100) 0.01 else 1.0
+        require(ball.isFinite() && d1.isFinite() && d2.isFinite() && load.isFinite() &&
+            d1 * factor > 0 && d1 * factor < ball && d2 * factor > 0 && d2 * factor < ball)
+        val d = (d1 + d2) / 2 * factor
         require(ball > 0 && d > 0 && d < ball && load > 0)
         return (if(newtons) 0.102 else 1.0) * 2 * load / (3.14159 * ball * (ball - sqrt(ball * ball - d * d)))
     }
     fun thickness(hv: Double, loadKgf: Double, factor: Double): Double {
-        require(hv > 0 && loadKgf > 0)
+        require(hv.isFinite() && loadKgf.isFinite() && factor.isFinite() && hv > 0 && loadKgf > 0 && factor > 0)
         return sqrt(1.854 * loadKgf / hv) * factor
     }
 }
@@ -59,46 +63,6 @@ class ThicknessTables(activity: Activity) {
         if (exact) return values.firstOrNull { it.first == hardness }?.second
         // Excel VLOOKUP(..., TRUE): largest key not exceeding the query.
         return values.filter { it.first <= hardness }.maxByOrNull { it.first }?.second
-    }
-}
-
-/** Conversion points taken from the supplied workbook, sheet 4. No extrapolation. */
-class ConversionTables(activity: Activity) {
-    data class Point(val hrc: Double?, val hb: Double?, val hv: Double?) {
-        fun at(scale: Int): Double? = when(scale) { 0 -> hrc; 1 -> hb; else -> hv }
-    }
-    data class Series(val document: String, val material: String, val points: List<Point>)
-    data class Answer(val value: Double?, val status: String, val nearest: Double? = null)
-    val series: List<Series>
-    init {
-        val data = linkedMapOf<Pair<String,String>, MutableList<Point>>()
-        activity.assets.open("hardness_conversion.tsv").bufferedReader().forEachLine { line ->
-            val a=line.split('\t')
-            if(a.size==5) {
-                val point=Point(a[2].toDoubleOrNull(),a[3].toDoubleOrNull(),a[4].toDoubleOrNull())
-                data.getOrPut(a[0] to a[1]) { mutableListOf() }.add(point)
-            }
-        }
-        series=data.map { (key,values) -> Series(key.first,key.second,values) }
-    }
-    fun convert(s: Series, from: Int, to: Int, x: Double): Answer {
-        val pts=s.points.mapNotNull { p ->
-            val a=p.at(from); val b=p.at(to)
-            if(a!=null && b!=null) a to b else null
-        }.sortedBy { it.first }
-        if(pts.isEmpty()) return Answer(null,"Перевод не предусмотрен")
-        val min=pts.first();val max=pts.last()
-        if(x<min.first || x>max.first) {
-            val near=if(x<min.first) min else max
-            return Answer(null,"Вне диапазона: ближайшее ${near.first} → ${near.second}",near.second)
-        }
-        pts.firstOrNull { kotlin.math.abs(it.first-x)<1e-8 }?.let { return Answer(it.second,"Табличное значение") }
-        val upper=pts.indexOfFirst { it.first>x }
-        if(upper<=0) return Answer(null,"Нет подходящей пары")
-        val lo=pts[upper-1];val hi=pts[upper]
-        if(hi.first==lo.first) return Answer(null,"Неоднозначная таблица")
-        val y=lo.second+(x-lo.first)*(hi.second-lo.second)/(hi.first-lo.first)
-        return Answer(y,"Интерполяция")
     }
 }
 
@@ -238,7 +202,12 @@ class MainActivity : Activity() {
         orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(9),dp(12),dp(10)); background=shape(panel,Color.rgb(46,93,114))
         val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(6),0,dp(6)); root.addView(this,lp)
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); conversionTables=ConversionTables(this); showScreen(0) }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        thicknessTables=ThicknessTables(this)
+        conversionTables=assets.open("hardness_conversion.tsv").bufferedReader().use { ConversionTables(it.readLines()) }
+        showScreen(0)
+    }
     private fun showScreen(tab: Int) {
         currentTab=tab
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -289,13 +258,16 @@ class MainActivity : Activity() {
             tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(39),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
         }
         when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); 2 -> thicknessScreen(); else -> conversionScreen() }
-        root.addView(text("Офлайн • Справочные данные Excel v2",11f,Color.GRAY))
+        root.addView(text("Офлайн • HardnessLab 3.4 RC1 • Справочные данные",11f,Color.GRAY))
     }
     private fun conversionScreen() {
         val p=panel()
         p.addView(text("Перевод твёрдости",19f))
-        p.addView(text("Таблицы из Excel · без экстраполяции",12f,Color.LTGRAY))
-        val mode=spinner(listOf("Все допустимые документы","Один документ"))
+        p.addView(text("Справочные значения · без экстраполяции. Перевод не заменяет испытание.",12f,Color.LTGRAY))
+        if(conversionTables.series.isEmpty()) {
+            p.addView(text("Справочник недоступен",14f,hrcRed)); return
+        }
+        val mode=spinner(listOf("Все документы","Один документ"))
         p.addView(text("Режим",13f,Color.LTGRAY));p.addView(mode)
         val docs=conversionTables.series.map { it.document }.distinct()
         val doc=spinner(docs)
@@ -303,7 +275,8 @@ class MainActivity : Activity() {
         p.addView(docLabel);p.addView(doc)
         val material=spinner(listOf("Все материалы")+conversionTables.series.map { it.material }.distinct())
         p.addView(text("Материал",13f,Color.LTGRAY));p.addView(material)
-        val scale=spinner(listOf("HRC","HB","HV"))
+        val scaleLabels=listOf("HRC","HB/HBW","HV")
+        val scale=spinner(scaleLabels)
         p.addView(text("Исходная шкала",13f,Color.LTGRAY));p.addView(scale)
         val input=field("Например: 45","")
         p.addView(text("Твёрдость",13f,muted)); p.addView(input)
@@ -315,7 +288,7 @@ class MainActivity : Activity() {
             docLabel.visibility=doc.visibility
             results.removeAllViews()
             val x=input.text.toString().replace(',','.').toDoubleOrNull()
-            if(x!=null && x.isFinite()) {
+            if(x!=null && x.isFinite() && x>0) {
                 val from=scale.selectedItemPosition
                 val targetScales=(0..2).filter { it!=from }
                 val candidates=conversionTables.series.filter { s ->
@@ -325,18 +298,23 @@ class MainActivity : Activity() {
                 var count=0
                 candidates.forEach { s ->
                     val answers=targetScales.map { to -> to to conversionTables.convert(s,from,to,x) }
-                    if(answers.any { it.second.value!=null }) {
-                        count++
+                    run {
+                        if(answers.any { it.second.value!=null }) count++
                         val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(7),dp(10),dp(7));background=shape(Color.rgb(31,48,66)) }
                         card.addView(text(s.document,15f,accent).apply { setTypeface(null,Typeface.BOLD) })
                         card.addView(text(s.material,12f,Color.LTGRAY))
+                        card.addView(text(s.note,11f,if(s.checked) muted else hrcRed))
                         val columns=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
                         answers.forEach { (to,a) ->
-                            val label=listOf("HRC","HB","HV")[to]
+                            val label=scaleLabels[to]
                             val color=listOf(hrcRed,hbGreen,hvBlue)[to]
                             val cell=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(7),dp(5),dp(7),dp(5));gravity=Gravity.CENTER; background=shape(Color.rgb(23,39,55))}
                             cell.addView(text(label,12f,color).apply {setTypeface(null,Typeface.BOLD);gravity=Gravity.CENTER})
                             cell.addView(text(if(a.value==null) "—" else String.format(Locale("ru"),"%.2f",a.value),19f,if(a.value==null) muted else color).apply {gravity=Gravity.CENTER})
+                            cell.addView(text(a.status,11f,muted).apply { gravity=Gravity.CENTER })
+                            if(a.nearest!=null && a.nearestInput!=null) {
+                                cell.addView(text("Ближайшее: ${a.nearestInput.pretty()} ${scaleLabels[from]} → ${a.nearest.pretty()} $label",10f,muted).apply {gravity=Gravity.CENTER})
+                            }
                             columns.addView(cell,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(3),dp(3),dp(3),0)})
                         }
                         card.addView(columns)
@@ -345,7 +323,10 @@ class MainActivity : Activity() {
                 }
                 if(count==0) results.addView(text("Нет допустимых переводов для выбранных условий",14f,Color.LTGRAY))
                 showResult("Перевод · $count наборов таблиц")
-            } else showResult("")
+            } else {
+                if(input.text.isNotBlank()) results.addView(text("Введите положительное число",14f,hrcRed))
+                showResult("")
+            }
         }
         watch(listOf(input),listOf(mode,doc,material,scale),update)
     }
@@ -395,8 +376,10 @@ class MainActivity : Activity() {
     }
     private fun renderMeasurementHistory(section: LinearLayout, entries: List<Measurement>, scale: String) {
         section.removeAllViews()
-        if(entries.isEmpty()) return
         section.addView(text("История измерений · ${entries.size}",15f,Color.WHITE).apply {setTypeface(null,Typeface.BOLD)})
+        val values=entries.mapNotNull { it.result.replace(',','.').toDoubleOrNull()?.takeIf { n -> n.isFinite() } }
+        if(values.isNotEmpty()) section.addView(text("Среднее: $scale ${values.average().pretty()}",16f,if(scale=="HB") hbGreen else hvBlue).apply {setTypeface(null,Typeface.BOLD)})
+        if(entries.isEmpty()) section.addView(text("Нет сохранённых измерений",12f,muted))
         entries.asReversed().forEachIndexed { idx, entry ->
             val line=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(10),dp(7),dp(10),dp(7));background=shape(Color.rgb(31,48,66))}
             val details=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
@@ -409,6 +392,7 @@ class MainActivity : Activity() {
         val erase=Button(this).apply {
             text="Очистить данные";isAllCaps=false;textSize=12f;setTextColor(muted)
             background=shape(Color.rgb(35,48,65))
+            isEnabled=entries.isNotEmpty()
             setOnClickListener {
                 android.app.AlertDialog.Builder(this@MainActivity)
                     .setTitle("Очистить историю?")
@@ -434,7 +418,7 @@ class MainActivity : Activity() {
         val p=panel();p.addView(text("Виккерс · HV",18f))
         val mode=spinner(listOf("Прямой ввод диагоналей, мм","X10","X20","Микротвёрдость (0,3 мкм/дел.)"))
         val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"))
-        if(prefs.getBoolean("v_mode_default_x20",true)) { mode.setSelection(2);prefs.edit().putBoolean("v_mode_default_x20",false).apply() }
+        if(!prefs.contains("tab_0_spinner_0")) prefs.edit().putInt("tab_0_spinner_0",2).apply()
         compactSelectors(p,mode,units)
         p.addView(text("Нагрузка",13f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Диагональ 1", "");val b=field("Диагональ 2", "")
