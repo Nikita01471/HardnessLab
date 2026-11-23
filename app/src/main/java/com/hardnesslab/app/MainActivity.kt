@@ -64,6 +64,7 @@ class MainActivity : Activity() {
     private val bg = Color.rgb(12, 19, 31)
     private val panel = Color.rgb(24, 35, 51)
     private val accent = Color.rgb(75, 196, 235)
+    private val successGreen = Color.rgb(34, 197, 94)
     private lateinit var root: LinearLayout
     private lateinit var resultDock: TextView
     private var keyboardVisible = false
@@ -118,10 +119,11 @@ class MainActivity : Activity() {
     private var currentTab = 0
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
-        text=s; textSize=size; setTextColor(color); setPadding(0,dp(4),0,dp(4))
+        text=s; textSize=size; setTextColor(color); setPadding(0,dp(4),0,dp(4)); gravity=android.view.Gravity.CENTER_VERTICAL
     }
     private fun field(hintText: String, initial: String): EditText = EditText(this).apply {
-        hint=hintText; setText(initial); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
+        hint=hintText; setText(initial); setTextColor(Color.WHITE); setHintTextColor(Color.rgb(150, 164, 179))
+        textSize=16f; ellipsize=android.text.TextUtils.TruncateAt.END
         inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE
         setOnEditorActionListener { _,_,_ -> (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken,0);clearFocus();true }
@@ -137,7 +139,8 @@ class MainActivity : Activity() {
     }
     private fun spinner(options: List<String>): Spinner = Spinner(this).apply {
         adapter=ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, options)
-        minimumHeight=dp(40)
+        minimumHeight=dp(44)
+        setPadding(dp(2),0,dp(2),0)
     }
     private fun panel(): LinearLayout = LinearLayout(this).apply {
         orientation=LinearLayout.VERTICAL; setPadding(dp(14),dp(9),dp(14),dp(10)); background=shape(panel,Color.rgb(46,93,114))
@@ -298,7 +301,7 @@ class MainActivity : Activity() {
         val material=spinner(listOf("Сталь, чугун, высокопрочные сплавы","Титан и сплавы","Медь и лёгкие металлы, сплавы","Подшипниковые сплавы","Свинец, олово, мягкие металлы"));p.addView(material)
         val vMaterialLabel=text("Материал (таблицы Виккерса)",14f,Color.LTGRAY);p.addView(vMaterialLabel)
         val vMaterial=spinner(listOf("Сталь","Цветные металлы"));p.addView(vMaterial)
-        val hardness=field("Введите прогнозируемую твёрдость", "")
+        val hardness=field("Например: 25", "")
         val hardnessLabel=text("Прогнозируемая твёрдость HRC",14f,Color.LTGRAY)
         p.addView(hardnessLabel);p.addView(hardness);clearButton(p,listOf(hardness))
         val out=text("",18f,accent)
@@ -311,9 +314,9 @@ class MainActivity : Activity() {
             val heading=text("Результаты · ${rows.size}",17f,Color.WHITE)
             heading.setTypeface(null,Typeface.BOLD)
             resultsContainer.addView(heading)
-            val headers=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+            val headers=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=android.view.Gravity.CENTER_VERTICAL }
             listOf("Шкала / шарик", "Нагрузка", "Мин. толщина", "").forEachIndexed { i,label ->
-                headers.addView(text(label,10f,Color.LTGRAY),LinearLayout.LayoutParams(0,-2,listOf(1.25f,1.35f,1.25f,0.35f)[i]))
+                headers.addView(text(label,10f,Color.LTGRAY).apply { gravity=if(i==3) android.view.Gravity.CENTER else android.view.Gravity.CENTER_VERTICAL; maxLines=2 },LinearLayout.LayoutParams(0,-2,listOf(1.25f,1.35f,1.25f,0.35f)[i]))
             }
             resultsContainer.addView(headers)
             rows.forEachIndexed { index, entry ->
@@ -323,9 +326,9 @@ class MainActivity : Activity() {
                 val scale=if(d!=null) d else entry.substringBefore(":")
                 val loadValue=if(f!=null) f.substringBefore(" (") else "—"
                 val cells=listOf(scale,loadValue,thick,"✓")
-                val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; setPadding(dp(3),dp(5),dp(3),dp(5)); if(index%2==0) background=shape(Color.rgb(29,44,61)) }
+                val row=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=android.view.Gravity.CENTER_VERTICAL; minimumHeight=dp(42); setPadding(dp(3),dp(5),dp(3),dp(5)); if(index%2==0) background=shape(Color.rgb(29,44,61)) }
                 cells.forEachIndexed { i,value ->
-                    val cell=text(value,if(i==3) 17f else 12f,if(i>=2) accent else Color.WHITE)
+                    val cell=text(value,if(i==3) 20f else 12f,if(i==3) successGreen else if(i==2) accent else Color.WHITE).apply { gravity=if(i==3) android.view.Gravity.CENTER else android.view.Gravity.CENTER_VERTICAL; maxLines=2 }
                     row.addView(cell,LinearLayout.LayoutParams(0,-2,listOf(1.25f,1.35f,1.25f,0.35f)[i]))
                 }
                 resultsContainer.addView(row)
