@@ -105,7 +105,7 @@ class MainActivity : Activity() {
         val p=panel();p.addView(text("Твёрдость по Виккерсу",22f))
         val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"));p.addView(mode)
         val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
-        val a=field("Диагональ 1", "210");val b=field("Диагональ 2", "210");val load=field("Нагрузка", "49.03")
+        val a=field("Диагональ 1", "");val b=field("Диагональ 2", "");val load=field("Нагрузка", "")
         listOf(a,b,load).forEach(p::addView)
         val out=text("",28f,accent);p.addView(out)
         watch(listOf(a,b,load),listOf(mode,units)) {
