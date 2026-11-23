@@ -1,0 +1,6 @@
+Hardness Lab - GitHub Actions
+1. Распакуйте архив. Загружать нужно СОДЕРЖИМОЕ папки, а не ZIP как один файл.
+2. В корне репозитория должны лежать build.gradle.kts, settings.gradle.kts, папка app и скрытая папка .github/workflows.
+3. После загрузки откройте GitHub -> Actions -> Build Android APK -> Run workflow.
+4. После успешной сборки скачайте артефакт HardnessLab-debug-apk, распакуйте ZIP и установите app-debug.apk.
+5. Это тестовый APK: расчёты требуют проверки по исходным Excel перед производственным применением.
