@@ -119,7 +119,7 @@ class MainActivity : Activity() {
     private fun refreshDock() {
         if (!::resultDock.isInitialized) return
         resultDock.text = latestResult
-        resultDock.visibility = if (keyboardVisible) View.VISIBLE else View.GONE
+        resultDock.visibility = if (keyboardVisible && (currentTab == 0 || currentTab == 1 || latestResult.isNotBlank())) View.VISIBLE else View.GONE
         if (keyboardVisible) resultDock.bringToFront()
         if (keyboardVisible && latestResult.isBlank()) resultDock.text = "Результат появится после ввода"
     }
@@ -130,8 +130,8 @@ class MainActivity : Activity() {
         val bar=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
         val submit=Button(this).apply { text="Ввод";isAllCaps=false;setTextColor(Color.BLACK);background=shape(accent);setOnClickListener { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken,0);currentFocus?.clearFocus() } }
         val clear=Button(this).apply { text="Очистить";isAllCaps=false;setTextColor(Color.WHITE);background=shape(Color.rgb(68,80,95));setOnClickListener { fields.forEach { it.text.clear() };showResult("") } }
-        val l=LinearLayout.LayoutParams(0,dp(48),1f);l.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(submit,l)
-        val r=LinearLayout.LayoutParams(0,dp(48),1f);r.setMargins(dp(3),dp(10),dp(3),dp(8));bar.addView(clear,r);p.addView(bar)
+        val l=LinearLayout.LayoutParams(0,dp(42),1f);l.setMargins(dp(3),dp(5),dp(3),dp(4));bar.addView(submit,l)
+        val r=LinearLayout.LayoutParams(0,dp(42),1f);r.setMargins(dp(3),dp(5),dp(3),dp(4));bar.addView(clear,r);p.addView(bar)
     }
     private val prefs by lazy { getSharedPreferences("hardnesslab_modes_v21", Context.MODE_PRIVATE) }
     private fun remember(key: String, widget: Spinner) {
@@ -151,28 +151,40 @@ class MainActivity : Activity() {
         listOf(a,b).forEachIndexed { index, edit ->
             val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             column.addView(text("$kind ${index + 1}", 12f, Color.LTGRAY))
-            column.addView(edit, LinearLayout.LayoutParams(-1, dp(42)))
+            column.addView(edit, LinearLayout.LayoutParams(-1, dp(40)))
             line.addView(column, LinearLayout.LayoutParams(0,-2,1f).apply {
                 setMargins(if(index==0) 0 else dp(5),0,if(index==0) dp(5) else 0,0)
             })
         }
         p.addView(line)
     }
+    private fun compactSelectors(p: LinearLayout, first: Spinner, second: Spinner) {
+        val row = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        listOf(first,second).forEachIndexed { i, widget ->
+            val column = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+            column.addView(text(if(i==0) "Режим" else "Единицы",12f,Color.LTGRAY))
+            column.addView(widget,LinearLayout.LayoutParams(-1,dp(40)))
+            row.addView(column,LinearLayout.LayoutParams(0,-2,if(i==0) 1.7f else 1f).apply {
+                setMargins(if(i==0) 0 else dp(4),0,if(i==0) dp(4) else 0,0)
+            })
+        }
+        p.addView(row)
+    }
     private fun clearButton(p: LinearLayout, fields: List<EditText>) = actionButtons(p,fields)
     private var currentTab = 0
     private lateinit var conversionTables: ConversionTables
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
-        text=s; textSize=size; setTextColor(color); setPadding(0,dp(4),0,dp(4)); gravity=android.view.Gravity.CENTER_VERTICAL
+        text=s; textSize=size; setTextColor(color); setPadding(0,dp(2),0,dp(2)); gravity=android.view.Gravity.CENTER_VERTICAL
     }
     private fun field(hintText: String, initial: String): EditText = EditText(this).apply {
         hint=hintText; setText(initial); setTextColor(Color.WHITE); setHintTextColor(Color.rgb(150, 164, 179))
-        textSize=16f; minHeight=dp(48); background=shape(Color.rgb(30, 46, 64), Color.rgb(54, 77, 96)); ellipsize=android.text.TextUtils.TruncateAt.END
+        textSize=16f; minHeight=dp(40); background=shape(Color.rgb(30, 46, 64), Color.rgb(54, 77, 96)); ellipsize=android.text.TextUtils.TruncateAt.END
         inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE
         setOnEditorActionListener { _,_,_ -> (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken,0);clearFocus();true }
         setSingleLine(true)
-        setPadding(dp(12),dp(9),dp(12),dp(9))
+        setPadding(dp(12),dp(5),dp(12),dp(5))
         setOnFocusChangeListener { _, focused -> if(focused) {
             activeInput=this
             postDelayed({
@@ -182,7 +194,7 @@ class MainActivity : Activity() {
         } }
     }
     private fun spinner(options: List<String>): Spinner = Spinner(this).apply {
-        val rowHeight = dp(48)
+        val rowHeight = dp(40)
         val normal = object : ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, options) {
             override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
                 return TextView(this@MainActivity).apply {
@@ -198,7 +210,7 @@ class MainActivity : Activity() {
                     text = getItem(position); textSize = 15f; setTextColor(Color.WHITE)
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(16), 0, dp(16), 0)
-                    minHeight = dp(46)
+                    minHeight = dp(40)
                     background = shape(if(position % 2 == 0) Color.rgb(32,48,66) else panel)
                 }
             }
@@ -210,7 +222,7 @@ class MainActivity : Activity() {
         dropDownVerticalOffset = dp(4)
     }
     private fun panel(): LinearLayout = LinearLayout(this).apply {
-        orientation=LinearLayout.VERTICAL; setPadding(dp(14),dp(14),dp(14),dp(16)); background=shape(panel,Color.rgb(46,93,114))
+        orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(9),dp(12),dp(10)); background=shape(panel,Color.rgb(46,93,114))
         val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(6),0,dp(6)); root.addView(this,lp)
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); conversionTables=ConversionTables(this); showScreen(0) }
@@ -233,8 +245,8 @@ class MainActivity : Activity() {
         val frame=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(bg) }
         frame.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         contentFrame=frame
-        resultDock=TextView(this).apply { textSize=17f;setTextColor(accent);setPadding(dp(14),dp(10),dp(14),dp(10));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
-        resultDock.maxLines=2
+        resultDock=TextView(this).apply { textSize=19f;setTextColor(accent);setPadding(dp(14),dp(6),dp(14),dp(6));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
+        resultDock.maxLines=1
         resultDock.ellipsize=android.text.TextUtils.TruncateAt.END
         frame.addView(resultDock,LinearLayout.LayoutParams(-1,-2));setContentView(frame)
         // The result bar belongs to the resized window, not to the scrolling form.
@@ -256,16 +268,7 @@ class MainActivity : Activity() {
                 }
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            frame.setOnApplyWindowInsetsListener { _, insets ->
-                val opened = insets.isVisible(WindowInsets.Type.ime())
-                if (keyboardVisible != opened) {
-                    keyboardVisible = opened
-                    refreshDock()
-                }
-                insets
-            }
-        }
+
         root.addView(text("HARDNESS LAB",20f,accent).apply { setTypeface(null,Typeface.BOLD); gravity=Gravity.CENTER_VERTICAL; minHeight=dp(36) })
         // Compact header: leave more vertical space for the active input.
         val tabs=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL };root.addView(tabs)
@@ -369,8 +372,9 @@ class MainActivity : Activity() {
     }
     private fun vickersScreen() {
         val p=panel();p.addView(text("Виккерс · HV",18f))
-        val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"));p.addView(mode)
-        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"));p.addView(units)
+        val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"))
+        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"))
+        compactSelectors(p,mode,units)
         p.addView(text("Нагрузка",13f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Диагональ 1", "");val b=field("Диагональ 2", "")
         pairedFields(p,a,b,"Диагональ")
@@ -388,8 +392,9 @@ class MainActivity : Activity() {
     }
     private fun brinellScreen() {
         val p=panel();p.addView(text("Бринелль · HB",18f))
-        val microscope=spinner(listOf("Диаметр отпечатка, мм","Отсчёт микроскопа (×0,01 мм)"));p.addView(microscope)
-        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"));p.addView(units)
+        val microscope=spinner(listOf("Диаметр отпечатка, мм","Отсчёт микроскопа (×0,01 мм)"))
+        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"))
+        compactSelectors(p,microscope,units)
         p.addView(text("Диаметр шарика, мм",14f,Color.LTGRAY))
         val ball=spinner(listOf("1 мм","2,5 мм","5 мм","10 мм"));p.addView(ball)
         p.addView(text("Нагрузка",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
