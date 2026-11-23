@@ -125,7 +125,7 @@ class MainActivity : Activity() {
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         latestResult=""; keyboardVisible=false
         root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(12),dp(12),dp(12)); setBackgroundColor(bg) }
-        val scroll=ScrollView(this).apply { fillViewport=false; addView(root) }
+        val scroll=ScrollView(this).apply { isFillViewport=false; addView(root) }
         val frame=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(bg) }
         frame.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         resultDock=TextView(this).apply { textSize=17f;setTextColor(accent);setPadding(dp(14),dp(8),dp(14),dp(8));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
