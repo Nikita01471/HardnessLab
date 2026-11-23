@@ -1,1 +1,4 @@
 *.kt.bak
+
+app/release.jks
+*.jks
