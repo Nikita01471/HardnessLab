@@ -111,7 +111,7 @@ class MainActivity : Activity() {
         currentTab=tab
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(12),dp(12),dp(12)); setBackgroundColor(bg) }
-        val scroll=ScrollView(this).apply { fillViewport=false; addView(root) }
+        val scroll=ScrollView(this).apply { isFillViewport=false; addView(root) }
         val frame=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(bg) }
         frame.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         resultDock=TextView(this).apply { textSize=21f;setTextColor(accent);setPadding(dp(18),dp(12),dp(18),dp(12));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
