@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.View
 import android.view.WindowInsets
+import android.graphics.Rect
 import android.os.Build
 import android.view.inputmethod.InputMethodManager
 import android.graphics.drawable.GradientDrawable
@@ -66,12 +67,17 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var resultDock: TextView
     private var keyboardVisible = false
+    private lateinit var contentScroll: ScrollView
+    private lateinit var contentFrame: LinearLayout
     private var activeInput: EditText? = null
     private var latestResult = ""
+    private var lastDockVisible = false
     private fun refreshDock() {
         if (!::resultDock.isInitialized) return
         resultDock.text = latestResult
-        resultDock.visibility = if (keyboardVisible && latestResult.isNotBlank()) View.VISIBLE else View.GONE
+        resultDock.visibility = if (keyboardVisible) View.VISIBLE else View.GONE
+        if (keyboardVisible) resultDock.bringToFront()
+        if (keyboardVisible && latestResult.isBlank()) resultDock.text = "Результат появится после ввода"
     }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun shape(color: Int, stroke: Int? = null): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius=dp(16).toFloat(); if(stroke!=null) setStroke(dp(1),stroke) }
@@ -96,11 +102,23 @@ class MainActivity : Activity() {
     private fun labeled(p: LinearLayout, label: String, input: EditText) {
         p.addView(text(label, 13f, Color.LTGRAY)); p.addView(input)
     }
+    private fun pairedFields(p: LinearLayout, a: EditText, b: EditText, kind: String) {
+        val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(a,b).forEachIndexed { index, edit ->
+            val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            column.addView(text("$kind ${index + 1}", 12f, Color.LTGRAY))
+            column.addView(edit, LinearLayout.LayoutParams(-1, dp(42)))
+            line.addView(column, LinearLayout.LayoutParams(0,-2,1f).apply {
+                setMargins(if(index==0) 0 else dp(5),0,if(index==0) dp(5) else 0,0)
+            })
+        }
+        p.addView(line)
+    }
     private fun clearButton(p: LinearLayout, fields: List<EditText>) = actionButtons(p,fields)
     private var currentTab = 0
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
-        text=s; textSize=size; setTextColor(color); setPadding(0,dp(7),0,dp(7))
+        text=s; textSize=size; setTextColor(color); setPadding(0,dp(4),0,dp(4))
     }
     private fun field(hintText: String, initial: String): EditText = EditText(this).apply {
         hint=hintText; setText(initial); setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
@@ -108,16 +126,22 @@ class MainActivity : Activity() {
         imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE
         setOnEditorActionListener { _,_,_ -> (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken,0);clearFocus();true }
         setSingleLine(true)
-        setPadding(dp(10),dp(8),dp(10),dp(8))
-        setOnFocusChangeListener { _, focused -> if(focused) activeInput=this }
+        setPadding(dp(6),dp(5),dp(6),dp(5))
+        setOnFocusChangeListener { _, focused -> if(focused) {
+            activeInput=this
+            postDelayed({
+                val r=Rect(0,0,width,height+dp(6))
+                requestRectangleOnScreen(r,true)
+            },180)
+        } }
     }
     private fun spinner(options: List<String>): Spinner = Spinner(this).apply {
         adapter=ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, options)
-        minimumHeight=dp(46)
+        minimumHeight=dp(40)
     }
     private fun panel(): LinearLayout = LinearLayout(this).apply {
-        orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(14)); background=shape(panel,Color.rgb(46,93,114))
-        val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(10),0,dp(8)); root.addView(this,lp)
+        orientation=LinearLayout.VERTICAL; setPadding(dp(14),dp(9),dp(14),dp(10)); background=shape(panel,Color.rgb(46,93,114))
+        val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(6),0,dp(6)); root.addView(this,lp)
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); showScreen(0) }
     private fun showScreen(tab: Int) {
@@ -125,32 +149,49 @@ class MainActivity : Activity() {
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         latestResult=""; keyboardVisible=false
         root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(12),dp(12),dp(12),dp(12)); setBackgroundColor(bg) }
-        val scroll=ScrollView(this).apply { isFillViewport=false; addView(root) }
+        val scroll=ScrollView(this).apply { isFillViewport=false; addView(root); clipToPadding=false }
+        contentScroll=scroll
         val frame=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(bg) }
         frame.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        resultDock=TextView(this).apply { textSize=17f;setTextColor(accent);setPadding(dp(14),dp(8),dp(14),dp(8));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
-        resultDock.maxLines=1
+        contentFrame=frame
+        resultDock=TextView(this).apply { textSize=17f;setTextColor(accent);setPadding(dp(14),dp(10),dp(14),dp(10));background=shape(Color.rgb(17,48,63),accent);visibility=View.GONE }
+        resultDock.maxLines=2
         resultDock.ellipsize=android.text.TextUtils.TruncateAt.END
         frame.addView(resultDock,LinearLayout.LayoutParams(-1,-2));setContentView(frame)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            frame.setOnApplyWindowInsetsListener { _, insets ->
-                val opened=insets.isVisible(WindowInsets.Type.ime())
-                if (keyboardVisible!=opened) { keyboardVisible=opened; refreshDock() }
-                insets
+        // The result bar belongs to the resized window, not to the scrolling form.
+        // Detect the visible viewport even on Android builds that do not dispatch IME insets.
+        frame.viewTreeObserver.addOnGlobalLayoutListener {
+            val visible = Rect()
+            frame.getWindowVisibleDisplayFrame(visible)
+            val screenHeight = frame.rootView.height
+            val obscured = (screenHeight - visible.bottom).coerceAtLeast(0)
+            val opened = obscured > dp(120)
+            if (keyboardVisible != opened) {
+                keyboardVisible = opened
+                refreshDock()
             }
-        } else {
-            frame.viewTreeObserver.addOnGlobalLayoutListener {
-                val rect=android.graphics.Rect()
-                frame.getWindowVisibleDisplayFrame(rect)
-                val opened=(frame.rootView.height-rect.bottom)>dp(170)
-                if (keyboardVisible!=opened) { keyboardVisible=opened; refreshDock() }
+            if (opened) activeInput?.let { input ->
+                if (input.hasFocus()) input.post {
+                    val rect = Rect(0,0,input.width,input.height+dp(14))
+                    input.requestRectangleOnScreen(rect,false)
+                }
             }
         }
-        root.addView(text("HARDNESS LAB",25f,accent).apply { setTypeface(null,Typeface.BOLD) })
-        root.addView(text("Расчёт твёрдости материалов",13f,Color.LTGRAY))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            frame.setOnApplyWindowInsetsListener { _, insets ->
+                val opened = insets.isVisible(WindowInsets.Type.ime())
+                if (keyboardVisible != opened) {
+                    keyboardVisible = opened
+                    refreshDock()
+                }
+                insets
+            }
+        }
+        root.addView(text("HARDNESS LAB",20f,accent).apply { setTypeface(null,Typeface.BOLD) })
+        // Compact header: leave more vertical space for the active input.
         val tabs=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL };root.addView(tabs)
         listOf("Виккерс","Бринелль","Толщина").forEachIndexed { i,label ->
-            tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(49),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
+            tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(39),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
         }
         when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); else -> thicknessScreen() }
         root.addView(text("Офлайн • Справочные данные Excel v2",11f,Color.GRAY))
@@ -175,12 +216,17 @@ class MainActivity : Activity() {
     private val bLoads = listOf(62.5,100.0,125.0,187.5,250.0,500.0,750.0,1000.0,1500.0,3000.0)
     private fun Double.shortLabel(): String = if (this == toLong().toDouble()) toLong().toString() else toString()
     private fun loadMenu(values: List<Double>, units: Spinner, load: Spinner, key: String, update: () -> Unit) {
-        val kgf = units.selectedItemPosition == 1
+        val kgf = units.selectedItemPosition == 0
         val old = prefs.getInt(key, 0).coerceIn(0,values.lastIndex)
-        load.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,values.map {
+        val labels = values.map {
             if (kgf) "${it.shortLabel()} кгс" else "${(it*9.80665).pretty()} Н"
-        })
-        load.setSelection(old)
+        }
+        val current = (0 until load.adapter.count).map { load.adapter.getItem(it).toString() }
+        if (current != labels) {
+            load.adapter = ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,labels)
+            load.setSelection(old)
+        }
+        if (load.onItemSelectedListener != null && current == labels) { update(); return }
         load.onItemSelectedListener = object: android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long) { prefs.edit().putInt(key,pos).apply();update() }
             override fun onNothingSelected(p:android.widget.AdapterView<*>?) {}
@@ -188,17 +234,17 @@ class MainActivity : Activity() {
         update()
     }
     private fun vickersScreen() {
-        val p=panel();p.addView(text("Твёрдость по Виккерсу",22f))
+        val p=panel();p.addView(text("Виккерс · HV",18f))
         val mode=spinner(listOf("Прямой ввод диагоналей, мм","Микроскоп X10","Микроскоп X20","Микротвёрдость (0,3 мкм/дел.)"));p.addView(mode)
-        val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
-        p.addView(text("Выберите нагрузку",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
+        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"));p.addView(units)
+        p.addView(text("Нагрузка",13f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Диагональ 1", "");val b=field("Диагональ 2", "")
-        labeled(p,"Диагональ 1 (в единицах режима)",a);labeled(p,"Диагональ 2 (в единицах режима)",b)
+        pairedFields(p,a,b,"Диагональ")
         clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val kgf=vLoads[load.selectedItemPosition.coerceIn(0,vLoads.lastIndex)]
-                val newtons=units.selectedItemPosition==0
+                val newtons=units.selectedItemPosition==1
                 val result=Hardness.vickers(a.num(),b.num(),if(newtons) kgf*9.80665 else kgf,mode.selectedItemPosition,newtons)
                 require(result.isFinite() && result>0);"HV  ${result.pretty()}"
             } catch(_:Exception) {"Проверьте введённые значения"}
@@ -207,20 +253,20 @@ class MainActivity : Activity() {
         watch(listOf(a,b),listOf(mode,units)) { loadMenu(vLoads,units,load,"v_load",update) }
     }
     private fun brinellScreen() {
-        val p=panel();p.addView(text("Твёрдость по Бринеллю",22f))
+        val p=panel();p.addView(text("Бринелль · HB",18f))
         val microscope=spinner(listOf("Диаметр отпечатка, мм","Отсчёт микроскопа (×0,01 мм)"));p.addView(microscope)
-        val units=spinner(listOf("Нагрузка, Н","Нагрузка, кгс"));p.addView(units)
+        val units=spinner(listOf("Нагрузка, кгс","Нагрузка, Н"));p.addView(units)
         p.addView(text("Диаметр шарика, мм",14f,Color.LTGRAY))
         val ball=spinner(listOf("1 мм","2,5 мм","5 мм","10 мм"));p.addView(ball)
         p.addView(text("Нагрузка",14f,Color.LTGRAY));val load=spinner(listOf("—"));p.addView(load)
         val a=field("Отпечаток 1", "");val b=field("Отпечаток 2", "")
-        labeled(p,"Отпечаток 1 (мм или деления)",a);labeled(p,"Отпечаток 2 (мм или деления)",b)
+        pairedFields(p,a,b,"Отпечаток")
         clearButton(p,listOf(a,b));val out=text("",28f,accent);p.addView(out)
         val update = {
             if(a.text.isBlank()||b.text.isBlank()) out.text="" else out.text=try {
                 val diameter=listOf(1.0,2.5,5.0,10.0)[ball.selectedItemPosition]
                 val kgf=bLoads[load.selectedItemPosition.coerceIn(0,bLoads.lastIndex)]
-                val newtons=units.selectedItemPosition==0
+                val newtons=units.selectedItemPosition==1
                 val result=Hardness.brinell(diameter,a.num(),b.num(),if(newtons) kgf*9.80665 else kgf,newtons,microscope.selectedItemPosition==1)
                 require(result.isFinite() && result>0);"HB  ${result.pretty()}"
             } catch(_:Exception) {"Проверьте: 0 < отпечаток < шарик"}
@@ -244,7 +290,7 @@ class MainActivity : Activity() {
         else -> emptyList()
     }
     private fun thicknessScreen() {
-        val p=panel();p.addView(text("Минимальная толщина образца",22f))
+        val p=panel();p.addView(text("Минимальная толщина образца",19f))
         p.addView(text("Все нагрузки из справочных таблиц Excel v2.0",13f,Color.LTGRAY))
         val method=spinner(listOf("Роквелл (HRC)","Виккерс · ГОСТ Р ИСО 6507-4-2007","Виккерс · ГОСТ 2999-59","Виккерс · ГОСТ 9450-76","Бринелль · ГОСТ 9012-59"))
         p.addView(text("Метод и стандарт",14f,Color.LTGRAY));p.addView(method)
