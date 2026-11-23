@@ -60,6 +60,46 @@ class ThicknessTables(activity: Activity) {
     }
 }
 
+/** Conversion points taken from the supplied workbook, sheet 4. No extrapolation. */
+class ConversionTables(activity: Activity) {
+    data class Point(val hrc: Double?, val hb: Double?, val hv: Double?) {
+        fun at(scale: Int): Double? = when(scale) { 0 -> hrc; 1 -> hb; else -> hv }
+    }
+    data class Series(val document: String, val material: String, val points: List<Point>)
+    data class Answer(val value: Double?, val status: String, val nearest: Double? = null)
+    val series: List<Series>
+    init {
+        val data = linkedMapOf<Pair<String,String>, MutableList<Point>>()
+        activity.assets.open("hardness_conversion.tsv").bufferedReader().forEachLine { line ->
+            val a=line.split('\t')
+            if(a.size==5) {
+                val point=Point(a[2].toDoubleOrNull(),a[3].toDoubleOrNull(),a[4].toDoubleOrNull())
+                data.getOrPut(a[0] to a[1]) { mutableListOf() }.add(point)
+            }
+        }
+        series=data.map { (key,values) -> Series(key.first,key.second,values) }
+    }
+    fun convert(s: Series, from: Int, to: Int, x: Double): Answer {
+        val pts=s.points.mapNotNull { p ->
+            val a=p.at(from); val b=p.at(to)
+            if(a!=null && b!=null) a to b else null
+        }.sortedBy { it.first }
+        if(pts.isEmpty()) return Answer(null,"Перевод не предусмотрен")
+        val min=pts.first();val max=pts.last()
+        if(x<min.first || x>max.first) {
+            val near=if(x<min.first) min else max
+            return Answer(null,"Вне диапазона: ближайшее ${near.first} → ${near.second}",near.second)
+        }
+        pts.firstOrNull { kotlin.math.abs(it.first-x)<1e-8 }?.let { return Answer(it.second,"Табличное значение") }
+        val upper=pts.indexOfFirst { it.first>x }
+        if(upper<=0) return Answer(null,"Нет подходящей пары")
+        val lo=pts[upper-1];val hi=pts[upper]
+        if(hi.first==lo.first) return Answer(null,"Неоднозначная таблица")
+        val y=lo.second+(x-lo.first)*(hi.second-lo.second)/(hi.first-lo.first)
+        return Answer(y,"Интерполяция")
+    }
+}
+
 class MainActivity : Activity() {
     private val bg = Color.rgb(12, 19, 31)
     private val panel = Color.rgb(24, 35, 51)
@@ -117,6 +157,7 @@ class MainActivity : Activity() {
     }
     private fun clearButton(p: LinearLayout, fields: List<EditText>) = actionButtons(p,fields)
     private var currentTab = 0
+    private lateinit var conversionTables: ConversionTables
     private lateinit var thicknessTables: ThicknessTables
     private fun text(s: String, size: Float = 17f, color: Int = Color.WHITE): TextView = TextView(this).apply {
         text=s; textSize=size; setTextColor(color); setPadding(0,dp(4),0,dp(4)); gravity=android.view.Gravity.CENTER_VERTICAL
@@ -146,7 +187,7 @@ class MainActivity : Activity() {
         orientation=LinearLayout.VERTICAL; setPadding(dp(14),dp(9),dp(14),dp(10)); background=shape(panel,Color.rgb(46,93,114))
         val lp=LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(6),0,dp(6)); root.addView(this,lp)
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); showScreen(0) }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); thicknessTables=ThicknessTables(this); conversionTables=ConversionTables(this); showScreen(0) }
     private fun showScreen(tab: Int) {
         currentTab=tab
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -193,12 +234,67 @@ class MainActivity : Activity() {
         root.addView(text("HARDNESS LAB",20f,accent).apply { setTypeface(null,Typeface.BOLD) })
         // Compact header: leave more vertical space for the active input.
         val tabs=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL };root.addView(tabs)
-        listOf("Виккерс","Бринелль","Толщина").forEachIndexed { i,label ->
+        listOf("Виккерс","Бринелль","Толщина","Перевод").forEachIndexed { i,label ->
             tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(39),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
         }
-        when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); else -> thicknessScreen() }
+        when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); 2 -> thicknessScreen(); else -> conversionScreen() }
         root.addView(text("Офлайн • Справочные данные Excel v2",11f,Color.GRAY))
     }
+    private fun conversionScreen() {
+        val p=panel()
+        p.addView(text("Перевод твёрдости",19f))
+        p.addView(text("Таблицы из Excel · без экстраполяции",12f,Color.LTGRAY))
+        val mode=spinner(listOf("Все допустимые документы","Один документ"))
+        p.addView(text("Режим",13f,Color.LTGRAY));p.addView(mode)
+        val docs=conversionTables.series.map { it.document }.distinct()
+        val doc=spinner(docs)
+        val docLabel=text("Документ",13f,Color.LTGRAY)
+        p.addView(docLabel);p.addView(doc)
+        val material=spinner(listOf("Все материалы")+conversionTables.series.map { it.material }.distinct())
+        p.addView(text("Материал",13f,Color.LTGRAY));p.addView(material)
+        val scale=spinner(listOf("HRC","HB","HV"))
+        p.addView(text("Исходная шкала",13f,Color.LTGRAY));p.addView(scale)
+        val input=field("Твёрдость","")
+        p.addView(input)
+        clearButton(p,listOf(input))
+        val results=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        p.addView(results)
+        val update = {
+            doc.visibility=if(mode.selectedItemPosition==1) View.VISIBLE else View.GONE
+            docLabel.visibility=doc.visibility
+            results.removeAllViews()
+            val x=input.text.toString().replace(',','.').toDoubleOrNull()
+            if(x!=null && x.isFinite()) {
+                val from=scale.selectedItemPosition
+                val targetScales=(0..2).filter { it!=from }
+                val candidates=conversionTables.series.filter { s ->
+                    (mode.selectedItemPosition==0 || s.document==docs[doc.selectedItemPosition.coerceIn(docs.indices)]) &&
+                    (material.selectedItemPosition==0 || s.material==material.selectedItem.toString())
+                }
+                var count=0
+                candidates.forEach { s ->
+                    val lines=targetScales.map { to ->
+                        val a=conversionTables.convert(s,from,to,x)
+                        val label=listOf("HRC","HB","HV")[to]
+                        if(a.value!=null) "$label  ${String.format(Locale("ru"),"%.2f",a.value)} · ${a.status}"
+                        else "$label  — · ${a.status}"
+                    }
+                    if(lines.any { !it.contains("Перевод не предусмотрен") }) {
+                        count++
+                        val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(9),dp(10),dp(9));background=shape(Color.rgb(31,48,66)) }
+                        card.addView(text(s.document,15f,accent))
+                        card.addView(text(s.material,12f,Color.LTGRAY))
+                        lines.forEach { card.addView(text(it,14f,Color.WHITE)) }
+                        results.addView(card,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(4),0,dp(4))})
+                    }
+                }
+                if(count==0) results.addView(text("Нет допустимых переводов для выбранных условий",14f,Color.LTGRAY))
+                showResult("Перевод · $count наборов таблиц")
+            } else showResult("")
+        }
+        watch(listOf(input),listOf(mode,doc,material,scale),update)
+    }
+
     private fun watch(inputs: List<EditText>, spinners: List<Spinner>, update: () -> Unit) {
         inputs.forEach { it.addTextChangedListener(object:TextWatcher {
             override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int) {}
