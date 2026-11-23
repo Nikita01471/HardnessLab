@@ -258,7 +258,7 @@ class MainActivity : Activity() {
             tabs.addView(Button(this).apply { text=label; isAllCaps=false; textSize=12f;setTextColor(if(i==tab) accent else Color.WHITE);background=shape(if(i==tab) Color.rgb(22,65,83) else Color.rgb(43,57,71),if(i==tab) accent else null); setOnClickListener { showScreen(i) } },LinearLayout.LayoutParams(0,dp(39),1f).apply {setMargins(dp(2),dp(3),dp(2),dp(3))})
         }
         when(tab) { 0 -> vickersScreen(); 1 -> brinellScreen(); 2 -> thicknessScreen(); else -> conversionScreen() }
-        root.addView(text("Офлайн • HardnessLab 3.4 RC1 • Справочные данные",11f,Color.GRAY))
+        root.addView(text("Офлайн • HardnessLab 3.4 RC2 • Справочные данные",11f,Color.GRAY))
     }
     private fun conversionScreen() {
         val p=panel()
@@ -296,24 +296,25 @@ class MainActivity : Activity() {
                     (material.selectedItemPosition==0 || s.material==material.selectedItem.toString())
                 }
                 var count=0
-                candidates.forEach { s ->
+                val supported = candidates.filter { it.supports(from) }
+                supported.forEach { s ->
                     val answers=targetScales.map { to -> to to conversionTables.convert(s,from,to,x) }
                     run {
                         if(answers.any { it.second.value!=null }) count++
                         val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(7),dp(10),dp(7));background=shape(Color.rgb(31,48,66)) }
-                        card.addView(text(s.document,15f,accent).apply { setTypeface(null,Typeface.BOLD) })
+                        card.addView(text("${s.document} · ${s.table}",15f,accent).apply { setTypeface(null,Typeface.BOLD) })
                         card.addView(text(s.material,12f,Color.LTGRAY))
                         card.addView(text(s.note,11f,if(s.checked) muted else hrcRed))
                         val columns=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
                         answers.forEach { (to,a) ->
-                            val label=scaleLabels[to]
+                            val label=s.label(to)
                             val color=listOf(hrcRed,hbGreen,hvBlue)[to]
                             val cell=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(7),dp(5),dp(7),dp(5));gravity=Gravity.CENTER; background=shape(Color.rgb(23,39,55))}
                             cell.addView(text(label,12f,color).apply {setTypeface(null,Typeface.BOLD);gravity=Gravity.CENTER})
-                            cell.addView(text(if(a.value==null) "—" else String.format(Locale("ru"),"%.2f",a.value),19f,if(a.value==null) muted else color).apply {gravity=Gravity.CENTER})
+                            cell.addView(text(if(a.value==null) "—" else a.value.conversionLabel(),19f,if(a.value==null) muted else color).apply {gravity=Gravity.CENTER})
                             cell.addView(text(a.status,11f,muted).apply { gravity=Gravity.CENTER })
                             if(a.nearest!=null && a.nearestInput!=null) {
-                                cell.addView(text("Ближайшее: ${a.nearestInput.pretty()} ${scaleLabels[from]} → ${a.nearest.pretty()} $label",10f,muted).apply {gravity=Gravity.CENTER})
+                                cell.addView(text("Ближайшее: ${a.nearestInput.conversionLabel()} ${s.label(from)} → ${a.nearest.conversionLabel()} $label",10f,muted).apply {gravity=Gravity.CENTER})
                             }
                             columns.addView(cell,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(3),dp(3),dp(3),0)})
                         }
@@ -321,6 +322,10 @@ class MainActivity : Activity() {
                         results.addView(card,LinearLayout.LayoutParams(-1,-2).apply {setMargins(0,dp(4),0,dp(4))})
                     }
                 }
+                val unavailable = candidates.filterNot { it.checked }
+                if(unavailable.isNotEmpty()) results.addView(text("Справочник не прошёл проверку: ${unavailable.joinToString { "${it.document} ${it.table}" }}",12f,hrcRed))
+                val unsupported = candidates.filter { it.checked && !it.supports(from) }
+                if(unsupported.isNotEmpty()) results.addView(text("Для ${scaleLabels[from]} нет пары в: ${unsupported.map { "${it.material} (${it.table})" }.distinct().joinToString()}",12f,muted))
                 if(count==0) results.addView(text("Нет допустимых переводов для выбранных условий",14f,Color.LTGRAY))
                 showResult("Перевод · $count наборов таблиц")
             } else {
@@ -346,6 +351,8 @@ class MainActivity : Activity() {
         } };update()
     }
     private fun Double.pretty(): String = String.format(Locale("ru"),"%.2f",this)
+    // Display up to one decimal for conversions; the figures are approximate, not precise measurements.
+    private fun Double.conversionLabel(): String = if(kotlin.math.abs(this-kotlin.math.round(this))<1e-8) this.toLong().toString() else String.format(Locale("ru"),"%.1f",this)
     private fun EditText.num(): Double = text.toString().replace(',','.').toDouble()
     private val vLoads = listOf(0.2,0.3,0.5,1.0,2.0,3.0,5.0,10.0,20.0,30.0,50.0)
     private val bLoads = listOf(62.5,100.0,125.0,187.5,250.0,500.0,750.0,1000.0,1500.0,3000.0)

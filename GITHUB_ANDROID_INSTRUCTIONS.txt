@@ -1,4 +1,4 @@
-HardnessLab 3.4 RC1 — подготовка к сборке
+HardnessLab 3.4 RC2 — подготовка к сборке
 
 1. Архив содержит только актуальное дерево исходников, без секретов, старых копий и вложенных ZIP.
 2. В корне: build.gradle.kts, settings.gradle.kts, app, .github/workflows/build-apk.yml.

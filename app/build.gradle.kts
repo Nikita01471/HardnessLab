@@ -9,7 +9,7 @@ android {
         }
     }
  namespace = "com.hardnesslab.app"; compileSdk = 35
- defaultConfig { applicationId = "com.hardnesslab.app"; minSdk = 24; targetSdk = 35; versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt() + 1000; versionName = "3.4-rc1" } }
+ defaultConfig { applicationId = "com.hardnesslab.app"; minSdk = 24; targetSdk = 35; versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt() + 1000; versionName = "3.4-rc2" } }
 
 android {
     buildTypes {
